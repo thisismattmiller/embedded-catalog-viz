@@ -83,7 +83,8 @@
   const playBtn = document.getElementById("play");
   let which = "entered", playing = null;
 
-  const frameURL = y => `${DATA}/timelapse_web/${which}/${y}.webp`;
+  // bump v when frames are re-encoded — busts the 24h edge/browser cache
+  const frameURL = y => `${DATA}/timelapse_web/${which}/${y}.webp?v=2`;
 
   function renderStats(y) {
     const meta = stats[which];
