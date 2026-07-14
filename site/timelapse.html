@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LC Catalog Timelapse</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><circle cx='5' cy='6' r='3' fill='%235a8dde'/><circle cx='11' cy='9' r='4' fill='%23ef547d'/><circle cx='8' cy='4' r='2' fill='%23459756'/></svg>">
+<style>
+  html, body { margin: 0; height: 100%; background: #101014; color: #d6d6dc;
+               font: 14px/1.5 system-ui, sans-serif; }
+  #wrap { display: flex; height: 100%; }
+  #stage { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+  #imgbox { flex: 1; display: flex; align-items: center; justify-content: center;
+            min-height: 0; }
+  #frame { max-width: 100%; max-height: 100%; object-fit: contain; }
+  #controls { display: flex; gap: 14px; align-items: center; padding: 12px 18px;
+              border-top: 1px solid #26262e; }
+  #year { font-size: 26px; font-weight: 700; color: #f2f2f6; min-width: 86px;
+          font-variant-numeric: tabular-nums; }
+  #slider { flex: 1; accent-color: #5a8dde; }
+  button { background: #1d1d24; color: #d6d6dc; border: 1px solid #33333d;
+           border-radius: 6px; padding: 6px 14px; font: inherit; cursor: pointer; }
+  button:hover { background: #26262e; }
+  #side { width: 320px; flex: none; border-left: 1px solid #26262e; padding: 16px;
+          overflow-y: auto; }
+  #side h1 { font-size: 15px; margin: 0 0 2px; color: #f2f2f6; }
+  #side .sub { color: #8a8a94; font-size: 12px; margin-bottom: 14px; }
+  #total { font-size: 22px; font-weight: 700; color: #f2f2f6; }
+  #total small { font-size: 12px; font-weight: 400; color: #8a8a94; }
+  .cls { margin: 8px 0; }
+  .cls .nm { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; }
+  .cls .nm .n { color: #9a9aa4; font-variant-numeric: tabular-nums; flex: none; }
+  .cls .bar { height: 5px; background: #26262e; border-radius: 3px; margin-top: 3px; }
+  .cls .bar i { display: block; height: 100%; border-radius: 3px; }
+  .which { display: flex; gap: 6px; margin-bottom: 14px; }
+  .which button.on { background: #2c3a55; border-color: #5a8dde; }
+  a { color: #9db8e8; }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <div id="stage">
+    <div id="imgbox"><img id="frame" alt="catalog map for the selected year"></div>
+    <div id="controls">
+      <button id="play">▶</button>
+      <span id="year"></span>
+      <input id="slider" type="range">
+    </div>
+  </div>
+  <div id="side">
+    <div class="which">
+      <button id="w-entered">By year entered</button>
+      <button id="w-pub">By publication year</button>
+    </div>
+    <h1 id="side-title"></h1>
+    <div class="sub" id="side-sub"></div>
+    <div id="total"></div>
+    <div id="classes"></div>
+    <div class="sub" style="margin-top:16px"><a href="index.html">← back to the map</a></div>
+  </div>
+</div>
+<script src="config.js"></script>
+<script>
+(async function () {
+  // config.js sets window.DATA_BASE ("data" locally; the R2 public URL when deployed)
+  const DATA = (window.DATA_BASE || "data").replace(/\/$/, "");
+  const [stats, classMeta] = await Promise.all([
+    fetch(`${DATA}/timelapse_web/stats.json`).then(r => r.json()),
+    fetch(`${DATA}/class_meta.json`).then(r => r.json()),
+  ]);
+  const TITLES = {
+    entered: ["Records entered by year", "MARC 008 date entered on file"],
+    pub: ["Collection by publication year", "MARC 008 Date1 (publication)"],
+  };
+  const clsName = c => classMeta[c]
+    ? (c.startsWith("fmt-") || c === "none" ? classMeta[c].name : `${c} — ${classMeta[c].name}`)
+    : "Unclassified";
+  const clsColor = c => (classMeta[c] || {}).color || "#5a5a62";
+
+  const img = document.getElementById("frame");
+  const slider = document.getElementById("slider");
+  const yearEl = document.getElementById("year");
+  const playBtn = document.getElementById("play");
+  let which = "entered", playing = null;
+
+  const frameURL = y => `${DATA}/timelapse_web/${which}/${y}.webp`;
+
+  function renderStats(y) {
+    const meta = stats[which];
+    const yc = meta.years[y] || {};
+    const total = Object.values(yc).reduce((s, n) => s + n, 0);
+    const first = y <= meta.start;
+    document.getElementById("total").innerHTML =
+      `${total.toLocaleString()} <small>records ${which === "pub" ? "published" : "added"}` +
+      `${first ? " in or before " + meta.start : " in " + y}</small>`;
+    const rows = Object.entries(yc).sort((a, b) => b[1] - a[1]).slice(0, 10);
+    const max = rows.length ? rows[0][1] : 1;
+    document.getElementById("classes").innerHTML = rows.map(([c, n]) =>
+      `<div class="cls"><div class="nm"><span>${clsName(c)}</span>` +
+      `<span class="n">${n.toLocaleString()}</span></div>` +
+      `<div class="bar"><i style="width:${Math.max(2, 100 * n / max)}%;` +
+      `background:${clsColor(c)}"></i></div></div>`).join("");
+  }
+
+  function show(y, fromSlider) {
+    y = Math.max(stats[which].start, Math.min(stats[which].end, y));
+    img.src = frameURL(y);
+    yearEl.textContent = (y <= stats[which].start ? "≤ " : "") + y;
+    if (!fromSlider) slider.value = y;
+    renderStats(y);
+    for (const d of [1, 2, -1]) {  // warm the cache around the cursor
+      const n = y + d;
+      if (n >= stats[which].start && n <= stats[which].end)
+        new Image().src = frameURL(n);
+    }
+  }
+
+  function setWhich(w) {
+    which = w;
+    if (playing) togglePlay();
+    document.getElementById("w-entered").classList.toggle("on", w === "entered");
+    document.getElementById("w-pub").classList.toggle("on", w === "pub");
+    const [t, sub] = TITLES[w];
+    document.getElementById("side-title").textContent = t;
+    document.getElementById("side-sub").textContent = sub;
+    slider.min = stats[w].start;
+    slider.max = stats[w].end;
+    show(stats[w].start);
+  }
+
+  function togglePlay() {
+    if (playing) { clearInterval(playing); playing = null; playBtn.textContent = "▶"; return; }
+    playBtn.textContent = "⏸";
+    playing = setInterval(() => {
+      const y = +slider.value + 1;
+      if (y > stats[which].end) return togglePlay();
+      show(y);
+    }, 180);
+  }
+
+  slider.oninput = () => show(+slider.value, true);
+  playBtn.onclick = togglePlay;
+  document.getElementById("w-entered").onclick = () => setWhich("entered");
+  document.getElementById("w-pub").onclick = () => setWhich("pub");
+  document.addEventListener("keydown", e => {
+    if (e.key === "ArrowRight") show(+slider.value + 1);
+    if (e.key === "ArrowLeft") show(+slider.value - 1);
+    if (e.key === " ") { e.preventDefault(); togglePlay(); }
+  });
+  setWhich("entered");
+})();
+</script>
+</body>
+</html>

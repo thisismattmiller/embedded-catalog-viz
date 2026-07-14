@@ -1,0 +1,327 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LC Catalog Map</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><circle cx='5' cy='6' r='3' fill='%235a8dde'/><circle cx='11' cy='9' r='4' fill='%23ef547d'/><circle cx='8' cy='4' r='2' fill='%23459756'/></svg>">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+  html, body { margin: 0; height: 100%; }
+  #map { height: 100%; background: #101014; }
+  .lbl { color: #e8e8ec; white-space: nowrap; pointer-events: none;
+         text-shadow: 0 0 3px #000, 0 0 6px #000, 0 1px 2px #000;
+         font-family: system-ui, sans-serif; transform: translate(-50%, -50%);
+         display: inline-block; }
+  .lbl-l1 { font-weight: 650; letter-spacing: .06em; text-transform: uppercase; }
+  .lbl-l2 { font-weight: 450; opacity: .92; }
+  .lbl-l3 { font-weight: 400; opacity: .8; font-style: italic; }
+  .lbl-l0 { font-weight: 700; letter-spacing: .35em; text-transform: uppercase;
+            color: #8f8f9c; opacity: .75; font-style: italic; }
+  .lbl .dot { display: block; border-radius: 50%; margin: 3px auto 0;
+              box-shadow: 0 0 2px #000; }  /* centered under the text: a class
+              swatch, not a location marker */
+  .lbl-l1 .dot { width: 8px; height: 8px; }
+  .lbl-l2 .dot { width: 6px; height: 6px; }
+  .lbl-l3 .dot { width: 5px; height: 5px; }
+  #legend { position: absolute; top: 12px; right: 12px; z-index: 1000;
+            background: rgba(16,16,20,.92); color: #d6d6dc; border: 1px solid #2a2a32;
+            border-radius: 8px; padding: 10px 12px; font: 12px/1.7 system-ui, sans-serif;
+            max-height: calc(100vh - 48px); overflow-y: auto; }
+  #legend h1 { font-size: 13px; margin: 0 0 6px; color: #f2f2f6; font-weight: 650; }
+  #legend .row { display: flex; align-items: center; gap: 7px; }
+  #legend .sw { width: 10px; height: 10px; border-radius: 2px; flex: none; }
+  #legend .toggle { cursor: pointer; user-select: none; color: #8a8a94;
+                    margin-top: 6px; display: inline-block; }
+  .leaflet-popup-content-wrapper, .leaflet-popup-tip {
+    background: rgba(20,20,26,.96); color: #d6d6dc;
+    border: 1px solid #2a2a32; box-shadow: 0 4px 18px rgba(0,0,0,.5); }
+  .leaflet-popup-content { margin: 12px 14px; font: 12px/1.5 system-ui, sans-serif;
+    max-height: 46vh; overflow-y: auto; }
+  .pk-head { font-size: 13px; font-weight: 650; color: #f2f2f6; margin-bottom: 2px; }
+  .pk-sub { color: #8a8a94; margin-bottom: 8px; }
+  .pk-row { margin: 6px 0 2px; }
+  .pk-name { display: flex; justify-content: space-between; gap: 10px; }
+  .pk-name .pct { color: #9a9aa4; flex: none; }
+  .pk-bar { height: 5px; border-radius: 3px; background: #26262e; margin-top: 3px; }
+  .pk-bar i { display: block; height: 100%; border-radius: 3px; }
+  .pk-ex { margin: 2px 0 0 14px; color: #a9a9b2; }
+  .pk-ex a, .pk-book a { color: #9db8e8; text-decoration: none; }
+  .pk-ex a:hover, .pk-book a:hover { text-decoration: underline; }
+  .pk-book { margin: 4px 0; display: flex; gap: 7px; align-items: baseline; }
+  .pk-book .sw { width: 8px; height: 8px; border-radius: 50%; flex: none;
+                 position: relative; top: 1px; }
+</style>
+</head>
+<body>
+<div id="map"></div>
+<div id="legend"><h1>LC Classification</h1><div id="legend-rows"></div>
+  <span class="toggle" id="legend-toggle">hide</span>
+  <div style="margin-top:6px"><a href="timelapse.html"
+    style="color:#9db8e8;font-size:12px;text-decoration:none">timelapse →</a></div></div>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="config.js"></script>
+<script>
+(async function () {
+  // config.js sets window.DATA_BASE ("data" locally; the R2 public URL when deployed)
+  const DATA = (window.DATA_BASE || "data").replace(/\/$/, "");
+  const [meta, labels, classes] = await Promise.all([
+    fetch(`${DATA}/tilemeta.json`).then(r => r.json()),
+    fetch(`${DATA}/labels.json`).then(r => r.json()),
+    fetch(`${DATA}/class_meta.json`).then(r => r.json()),
+  ]);
+  const [x0, x1, y0, y1] = meta.world;
+  const W = x1 - x0;
+  // data coords -> CRS.Simple latlng (world square = 256 px at zoom 0, y flipped)
+  const toLL = (x, y) => [-((y1 - y) / W) * 256, ((x - x0) / W) * 256];
+
+  const map = L.map("map", {
+    crs: L.CRS.Simple, minZoom: 0, maxZoom: meta.maxZoom + 1,
+    zoomSnap: 0.5, attributionControl: false,
+    closePopupOnClick: false,  // we close/reopen inspect popups ourselves
+  });
+  map.fitBounds([toLL(x0, y0), toLL(x1, y1)]);
+
+  L.tileLayer(`${DATA}/tiles/{z}/{x}/{y}.png`, {
+    tileSize: meta.tileSize, minZoom: 0,
+    maxNativeZoom: meta.maxZoom, maxZoom: meta.maxZoom + 1,
+    noWrap: true, bounds: [toLL(x0, y0), toLL(x1, y1)],
+  }).addTo(map);
+
+  // ── labels: reveal by zoom + rank, greedy de-collide per zoom ──────────────
+  const cands = [];
+  for (const e of labels.lang || [])
+    cands.push({ ...e, level: 0, minZoom: 2 + e.rank });
+  for (const e of labels.l1)
+    cands.push(e.code.startsWith("fmt-")
+      // format buckets are context, not subject matter: smaller style, never
+      // among the first labels on screen
+      ? { ...e, level: 2, minZoom: 3 + Math.ceil(e.rank / 2) }
+      // subject L1s: no rank gating — all eligible from the start, and the
+      // collision pass (biggest count first) decides what fits at each zoom,
+      // so sparse regions get their outpost labels early instead of at z5+
+      : { ...e, level: 1, minZoom: 1 });
+  for (const e of labels.l2) cands.push({ ...e, level: 2, minZoom: 3 + e.rank });
+  for (const e of labels.l3 || [])
+    cands.push({ ...e, level: 3,
+                 minZoom: Math.min(3 + (e.depth || 1), meta.maxZoom) });
+  for (const e of labels.area || [])
+    cands.push({ ...e, level: 2, rank: 0, minZoom: e.minZoom });
+  // subject labels claim space first; language watermarks (level 0) fill in
+  // last — else they blanket the non-English zone and block every subject
+  // label there (they're wide, letter-spaced, and numerous)
+  cands.sort((a, b) => (a.level || 9) - (b.level || 9) || b.count - a.count);
+
+  let shown = [];
+  function relayout() {
+    for (const m of shown) map.removeLayer(m);
+    shown = [];
+    const z = map.getZoom(), placed = [];
+    for (const c of cands) {
+      if (z < c.minZoom) continue;
+      const ll = toLL(c.x, c.y), pt = map.project(ll, z);
+      const wpx = c.name.length * (c.level === 1 ? 8 : 6.5) / 2 + 14;
+      if (placed.some(p => Math.abs(p.pt.x - pt.x) < wpx + p.w &&
+                           Math.abs(p.pt.y - pt.y) < 22)) continue;
+      // a repeated class name must be FAR apart on screen — one "LANGUAGE
+      // AND LITERATURE" per region of the viewport, not one per blob
+      if (placed.some(p => p.code === c.code &&
+                           Math.hypot(p.pt.x - pt.x, p.pt.y - pt.y) < 500))
+        continue;
+      placed.push({ pt, w: wpx, code: c.code });
+      const base = c.level === 0 ? 15
+                 : c.level === 1 ? Math.max(13, 17 - 2 * c.rank)
+                 : c.level === 2 ? 11.5 : 10.5;
+      let size = base + Math.min(3, Math.max(0, z - c.minZoom));
+      if (c.level === 1 && z < 2)  // whole-map view: top-level labels shrink
+        size = Math.max(9.5, size * (z <= 1 ? 0.62 : 0.75));  // or they blanket the viz
+      const cls = c.level > 0 &&
+        (classes[c.code] || classes[c.code[0]]);  // fmt-* whole, "ML1100-…" -> M
+      const dot = cls
+        ? `<span class="dot" style="background:${cls.color}"></span>` : "";
+      const m = L.marker(ll, {
+        interactive: false,
+        icon: L.divIcon({
+          className: "",
+          html: `<span class="lbl lbl-l${c.level}" style="font-size:${size}px"
+                 title="${c.code}">${c.name}${dot}</span>`,
+        }),
+      }).addTo(map);
+      shown.push(m);
+    }
+    const eligible = cands.filter(c => z >= c.minZoom).length;
+    console.log(`[labels] zoom=${z} eligible=${eligible} placed=${placed.length} ` +
+                `collided=${eligible - placed.length} (of ${cands.length} total)`);
+  }
+  map.on("zoomend", relayout);
+  relayout();
+
+  // ── click to inspect: quadtree lookup shards (static files only) ───────────
+  const FALLBACK = { name: "Unclassified", color: "#5a5a62" };
+  const BOX_PX = 28;            // half-size of the sampled square, screen px
+  const esc = s => s.replace(/&/g, "&amp;").replace(/</g, "&lt;");
+  const fromLL = ll => [x0 + ll.lng * W / 256, y1 + ll.lat * W / 256];
+  let idxP = null, boxRect = null, openPopup = null;
+  const leafCache = new Map();  // "d/cx_cy" -> points, ~60 most recent
+  const loadIndex = () => (idxP ??= fetch(`${DATA}/lookup/index.json`)
+    .then(r => { if (!r.ok) throw new Error("no lookup data"); return r.json(); })
+    .catch(e => { idxP = null; throw e; }));
+
+  function leafBox(idx, [d, cx, cy]) {
+    const s = W / (1 << d), [ix0, iy0] = [idx.world[0], idx.world[2]];
+    return [ix0 + cx * s, ix0 + (cx + 1) * s, iy0 + cy * s, iy0 + (cy + 1) * s];
+  }
+  const overlap = (a, b) =>
+    Math.max(0, Math.min(a[1], b[1]) - Math.max(a[0], b[0])) *
+    Math.max(0, Math.min(a[3], b[3]) - Math.max(a[2], b[2]));
+
+  async function fetchLeaf(l) {
+    const k = `${l[0]}/${l[1]}_${l[2]}`;
+    if (!leafCache.has(k)) {
+      leafCache.set(k, await fetch(`${DATA}/lookup/${k}.json`).then(r => r.json()));
+      if (leafCache.size > 60) leafCache.delete(leafCache.keys().next().value);
+    }
+    return leafCache.get(k);
+  }
+
+  const clsInfo = code => classes[code] || { ...FALLBACK, nameOnly: true };
+  // the 001 is the LC bib id, not an LCCN — keyword search on it finds the record
+  const catalogLink = (t, id) => id
+    ? `<a href="https://search.catalog.loc.gov/search?option=keyword&query=${id}"` +
+      ` target="_blank" rel="noopener">${esc(t)}</a>`
+    : esc(t);
+
+  function pctHTML(idx, counts, total, examples) {
+    const rows = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+    let html = "", shown = 0;
+    for (const [ci, n] of rows.slice(0, 6)) {
+      const code = idx.classes[ci], c = clsInfo(code), pct = 100 * n / total;
+      if (pct < 0.5 && shown >= 3) break;
+      shown++;
+      html += `<div class="pk-row"><div class="pk-name">` +
+        `<span>${esc(code === "none" || code.startsWith("fmt-") || c.nameOnly
+                     ? c.name : code + " — " + c.name)}</span>` +
+        `<span class="pct">${pct >= 10 ? pct.toFixed(0) : pct.toFixed(1)}%</span></div>` +
+        `<div class="pk-bar"><i style="width:${Math.max(2, pct)}%;` +
+        `background:${c.color}"></i></div>`;
+      for (const [t, id] of (examples[ci] || []).slice(0, 2))
+        html += `<div class="pk-ex">${catalogLink(t, id)}</div>`;
+      html += `</div>`;
+    }
+    return html;
+  }
+
+  function bookListHTML(idx, pts) {
+    return pts.map(p => {
+      const c = clsInfo(idx.classes[p.c]);
+      return `<div class="pk-book"><span class="sw" style="background:${c.color}"` +
+        ` title="${esc(c.name)}"></span><span>${catalogLink(p.t, p.id)}</span></div>`;
+    }).join("");
+  }
+
+  map.on("click", async ev => {
+    if (openPopup) {  // a click with the info open just dismisses it
+      map.closePopup(openPopup);
+      return;
+    }
+    let idx;
+    try { idx = await loadIndex(); } catch { return; }
+    const z = map.getZoom(), half = (BOX_PX / 2 ** z) * (W / 256);
+    const [px, py] = fromLL(ev.latlng);
+    const box = [px - half, px + half, py - half, py + half];
+
+    const hits = [];
+    for (const l of idx.leaves) {
+      const b = leafBox(idx, l), ov = overlap(box, b);
+      if (ov > 0) hits.push({ l, frac: ov / ((b[1] - b[0]) * (b[3] - b[2])) });
+    }
+    const rawTotal = hits.reduce((s, h) => s + h.l[3], 0);
+
+    if (boxRect) map.removeLayer(boxRect);
+    boxRect = L.rectangle([toLL(box[0], box[2]), toLL(box[1], box[3])],
+      { color: "#e8e8ec", weight: 1, fill: false, opacity: .6,
+        interactive: false }).addTo(map);
+    const popup = L.popup({ maxWidth: 340, autoPanPadding: [30, 30] })
+      .setLatLng(ev.latlng)
+      .setContent(`<div class="pk-sub">looking up…</div>`).openOn(map);
+    openPopup = popup;
+    popup.on("remove", () => {
+      if (boxRect) map.removeLayer(boxRect);
+      boxRect = null;
+      openPopup = null;
+    });
+
+    let html;
+    if (rawTotal === 0) {
+      html = `<div class="pk-head">Nothing here</div>` +
+             `<div class="pk-sub">no records in this spot</div>`;
+    } else if (hits.length <= 9 && rawTotal <= 30000) {
+      // zoomed in: fetch the leaves, use the actual books in the box
+      const leaves = await Promise.all(hits.map(h => fetchLeaf(h.l)));
+      const pts = [];
+      leaves.forEach(L_ => {
+        for (let i = 0; i < L_.x.length; i++)
+          if (L_.x[i] >= box[0] && L_.x[i] <= box[1] &&
+              L_.y[i] >= box[2] && L_.y[i] <= box[3])
+            pts.push({ x: L_.x[i], y: L_.y[i], c: L_.c[i],
+                       t: L_.t[i], id: L_.id[i],
+                       d: (L_.x[i] - px) ** 2 + (L_.y[i] - py) ** 2 });
+      });
+      pts.sort((a, b) => a.d - b.d);
+      if (pts.length === 0) {
+        html = `<div class="pk-head">Nothing here</div>` +
+               `<div class="pk-sub">no records in this spot</div>`;
+      } else if (pts.length <= 18) {
+        html = `<div class="pk-head">${pts.length.toLocaleString()} ` +
+          `record${pts.length > 1 ? "s" : ""} here</div>` +
+          `<div class="pk-sub">nearest first — click a title for the catalog record</div>` +
+          bookListHTML(idx, pts);
+      } else {
+        const counts = {}, examples = {};
+        for (const p of pts) {
+          counts[p.c] = (counts[p.c] || 0) + 1;
+          (examples[p.c] ??= []).length < 2 && examples[p.c].push([p.t, p.id]);
+        }
+        html = `<div class="pk-head">${pts.length.toLocaleString()} records here</div>` +
+          `<div class="pk-sub">exact count for the outlined area</div>` +
+          pctHTML(idx, counts, pts.length, examples);
+      }
+    } else {
+      // zoomed out: aggregate the index (leaf counts weighted by overlap)
+      const counts = {}, examples = {};
+      let total = 0;
+      for (const h of hits) {
+        total += h.l[3] * h.frac;  // full leaf count, not just its top classes
+        for (const [ci, n] of h.l[4])
+          counts[ci] = (counts[ci] || 0) + n * h.frac;
+        for (const [ci, t, id] of h.l[5])
+          if ((examples[ci] ??= []).length < 2 && h.frac > 0.25)
+            examples[ci].push([t, id]);
+      }
+      html = `<div class="pk-head">~${Math.round(total).toLocaleString()} records here</div>` +
+        `<div class="pk-sub">estimated for the outlined area — zoom in and ` +
+        `click for exact records</div>` +
+        pctHTML(idx, counts, total, examples);
+    }
+    popup.setContent(html);
+  });
+
+  // ── legend ──────────────────────────────────────────────────────────────────
+  const rows = document.getElementById("legend-rows");
+  const plain = code => code === "none" || code.startsWith("fmt-");
+  rows.innerHTML = Object.entries(classes)
+    .sort(([a], [b]) => plain(a) - plain(b) || a.localeCompare(b))
+    .map(([code, c]) =>
+      `<div class="row"><span class="sw" style="background:${c.color}"></span>` +
+      `<span>${plain(code) ? c.name : code + " — " + c.name}</span></div>`)
+    .join("");
+  const tog = document.getElementById("legend-toggle");
+  tog.onclick = () => {
+    const hidden = rows.style.display === "none";
+    rows.style.display = hidden ? "" : "none";
+    tog.textContent = hidden ? "hide" : "show";
+  };
+})();
+</script>
+</body>
+</html>
