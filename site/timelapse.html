@@ -12,7 +12,9 @@
   #stage { flex: 1; display: flex; flex-direction: column; min-width: 0; }
   #imgbox { flex: 1; display: flex; align-items: center; justify-content: center;
             min-height: 0; }
-  #frame { max-width: 100%; max-height: 100%; object-fit: contain; }
+  #frame { max-width: 100%; max-height: 100%; object-fit: contain;
+           /* display tuning (Matt, 2026-07-14): CSS only, frames untouched */
+           filter: brightness(1.7) saturate(1.5); }
   #controls { display: flex; gap: 14px; align-items: center; padding: 12px 18px;
               border-top: 1px solid #26262e; }
   #year { font-size: 26px; font-weight: 700; color: #f2f2f6; min-width: 86px;
@@ -84,7 +86,7 @@
   let which = "entered", playing = null;
 
   // bump v when frames are re-encoded — busts the 24h edge/browser cache
-  const frameURL = y => `${DATA}/timelapse_web/${which}/${y}.webp?v=3`;
+  const frameURL = y => `${DATA}/timelapse_web/${which}/${y}.webp?v=4`;
 
   function renderStats(y) {
     const meta = stats[which];

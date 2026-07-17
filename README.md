@@ -1,21 +1,29 @@
 # embedded-catalog-viz — deployment
 
-Static hosting for the LC catalog embedding map: the two HTML pages deploy to
-**GitHub Pages** via Actions; the heavy assets (~5.7 GB: map tiles, click-lookup
-shards, timelapse frames) live in a **Cloudflare R2** bucket under a `data/`
-prefix and are fetched cross-origin by the pages.
+Static hosting for the LC catalog embedding map: the HTML pages deploy to
+**GitHub Pages** via Actions; the heavy assets (~6 GB: map tiles, click-lookup
+shards, timelapse frames, atlas cell shards) live in a **Cloudflare R2** bucket
+under a `data/` prefix and are fetched cross-origin by the pages.
 
 ```
 site/                      what GitHub Pages serves
   index.html               the map viewer        (copied from the dev repo)
   timelapse.html           the timelapse explorer (copied from the dev repo)
+  atlas.html               Wikipedia × LC gap atlas (from embedded-catalog-wiki-embeddings)
   config.js                deploy-only: window.DATA_BASE -> public R2 URL
 .github/workflows/deploy.yml   Pages deploy on every push to main
 scripts/
   sync_site.sh             re-copy viewer pages from ~/git/embedded-catalog-viz
   r2_setup.sh              one-time: create bucket + CORS
-  r2_sync.sh               rclone sync of tiles/lookup/timelapse_web/JSONs to R2
+  r2_sync.sh               rclone sync of tiles/lookup/timelapse_web/atlas_cells/JSONs to R2
 ```
+
+`atlas.html` is a self-contained page (its own inline JS/CSS + cell summaries);
+on click it fetches one per-cell shard, `data/atlas_cells/<cell>.json` (up to
+1,000 LC + 1,000 Wikipedia titles), from R2 via the same `window.DATA_BASE`.
+The ~4,075 shards (~260 MB) are staged from the source project into the R2
+data dir; regenerate them there with
+`embedded-catalog-wiki-embeddings/scripts/build_atlas.py`.
 
 ## One-time setup
 
@@ -47,3 +55,8 @@ scripts/
 - **New render (tiles/labels/lookup changed):** `scripts/r2_sync.sh`
   (idempotent; only changed files upload).
 - **Viewer code changed:** `scripts/sync_site.sh`, then commit and push.
+- **Atlas changed:** rebuild in the source project
+  (`build_atlas.py` → `reports/atlas_cells/`, `build_atlas_viz.py` →
+  `reports/atlas.html`), then copy `reports/atlas.html` → `site/atlas.html`,
+  mirror `reports/atlas_cells/` → `~/Data/embedded-catalog-viz/atlas_cells/`,
+  run `scripts/r2_sync.sh`, commit and push.

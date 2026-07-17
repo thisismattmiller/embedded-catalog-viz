@@ -7,6 +7,13 @@
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><circle cx='5' cy='6' r='3' fill='%235a8dde'/><circle cx='11' cy='9' r='4' fill='%23ef547d'/><circle cx='8' cy='4' r='2' fill='%23459756'/></svg>">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <style>
+  /* self-hosted Noto Sans subset: system fonts lack the ALA-LC romanization
+     marks in transliterated titles (combining half marks U+FE20-FE2F, prime
+     letters U+02B9-02BA), and Google-hosted subsets omit them too */
+  @font-face { font-family: "Noto Sans"; font-weight: 400; font-display: swap;
+               src: url("fonts/NotoSans-Regular.woff2") format("woff2"); }
+  @font-face { font-family: "Noto Sans"; font-weight: 700; font-display: swap;
+               src: url("fonts/NotoSans-Bold.woff2") format("woff2"); }
   html, body { margin: 0; height: 100%; }
   #map { height: 100%; background: #101014; }
   .lbl { color: #e8e8ec; white-space: nowrap; pointer-events: none;
@@ -33,10 +40,14 @@
   #legend .sw { width: 10px; height: 10px; border-radius: 2px; flex: none; }
   #legend .toggle { cursor: pointer; user-select: none; color: #8a8a94;
                     margin-top: 6px; display: inline-block; }
+  /* display tuning (Matt, 2026-07-14): pure CSS filter over the rendered
+     tiles — brightens without re-rendering the pyramid */
+  .leaflet-tile-pane { filter: brightness(1.7) saturate(1.5); }
   .leaflet-popup-content-wrapper, .leaflet-popup-tip {
     background: rgba(20,20,26,.96); color: #d6d6dc;
     border: 1px solid #2a2a32; box-shadow: 0 4px 18px rgba(0,0,0,.5); }
-  .leaflet-popup-content { margin: 12px 14px; font: 12px/1.5 system-ui, sans-serif;
+  .leaflet-popup-content { margin: 12px 14px;
+    font: 12px/1.5 "Noto Sans", system-ui, sans-serif;
     max-height: 46vh; overflow-y: auto; }
   .pk-head { font-size: 13px; font-weight: 650; color: #f2f2f6; margin-bottom: 2px; }
   .pk-sub { color: #8a8a94; margin-bottom: 8px; }
@@ -58,7 +69,9 @@
 <div id="legend"><h1>LC Classification</h1><div id="legend-rows"></div>
   <span class="toggle" id="legend-toggle">hide</span>
   <div style="margin-top:6px"><a href="timelapse.html"
-    style="color:#9db8e8;font-size:12px;text-decoration:none">timelapse →</a></div></div>
+    style="color:#9db8e8;font-size:12px;text-decoration:none">timelapse →</a></div>
+  <div style="margin-top:4px"><a href="atlas.html"
+    style="color:#9db8e8;font-size:12px;text-decoration:none">Wikipedia × LC atlas →</a></div></div>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="config.js"></script>
 <script>
@@ -321,6 +334,11 @@
     rows.style.display = hidden ? "" : "none";
     tog.textContent = hidden ? "hide" : "show";
   };
+  // small screens: the open legend covers most of the map — start collapsed
+  if (matchMedia("(max-width: 700px)").matches) {
+    rows.style.display = "none";
+    tog.textContent = "show";
+  }
 })();
 </script>
 </body>

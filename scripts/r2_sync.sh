@@ -45,5 +45,9 @@ echo "== tiles (3.6 GB, ~620k files) =="
 rclone sync "$D/tiles" "r2:$BUCKET/data/tiles" "${COMMON[@]}" \
   --header-upload "Cache-Control: public, max-age=86400"
 
+echo "== atlas_cells shards (260 MB, ~4k files) — click-to-inspect for atlas.html =="
+rclone sync "$D/atlas_cells" "r2:$BUCKET/data/atlas_cells" "${COMMON[@]}" \
+  --header-upload "Cache-Control: public, max-age=86400"
+
 echo "done. remote now:"
 rclone size "r2:$BUCKET/data" --fast-list
