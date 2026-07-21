@@ -58,7 +58,10 @@
     <div class="sub" id="side-sub"></div>
     <div id="total"></div>
     <div id="classes"></div>
-    <div class="sub" style="margin-top:16px"><a href="index.html">← back to the map</a></div>
+    <div class="sub" style="margin-top:16px">
+      <a id="video-link" download>⬇ download this timelapse as video (MP4)</a>
+    </div>
+    <div class="sub"><a href="index.html">← back to the map</a></div>
   </div>
 </div>
 <script src="config.js"></script>
@@ -73,6 +76,11 @@
   const TITLES = {
     entered: ["Records entered by year", "MARC 008 date entered on file"],
     pub: ["Collection by publication year", "MARC 008 Date1 (publication)"],
+  };
+  // full smooth-animation renders, hosted alongside the data on R2
+  const VIDEOS = {
+    entered: ["lc-catalog-timelapse-by-year-entered.mp4", "19 MB"],
+    pub: ["lc-catalog-timelapse-by-publication-year.mp4", "31 MB"],
   };
   const clsName = c => classMeta[c]
     ? (c.startsWith("fmt-") || c === "none" ? classMeta[c].name : `${c} — ${classMeta[c].name}`)
@@ -126,6 +134,10 @@
     const [t, sub] = TITLES[w];
     document.getElementById("side-title").textContent = t;
     document.getElementById("side-sub").textContent = sub;
+    const [file, size] = VIDEOS[w];
+    const vl = document.getElementById("video-link");
+    vl.href = `https://lcviz.thisismattmiller.cloud/videos/${file}`;
+    vl.textContent = `⬇ download this timelapse as video (MP4, ${size})`;
     slider.min = stats[w].start;
     slider.max = stats[w].end;
     show(stats[w].start);
